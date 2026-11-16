@@ -1,4 +1,4 @@
-# Atelier Estates — Flask real-estate website
+# Zomar Homes & Properties — Flask real-estate website
 
 A responsive, editorial-style real-estate website starter built with Python/Flask, HTML, CSS and vanilla JavaScript. The interface uses DM Sans, restrained typography, large property photography, subtle motion and a warm neutral palette.
 
