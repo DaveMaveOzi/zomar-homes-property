@@ -40,6 +40,13 @@ for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
+# Mobile dropdown links use a URL change so the browser closes the popover
+# immediately after a selection. Keep the selected page in session state.
+VALID_PAGES = {"Home", "Properties", "About Us", "Contact Us", "Property Details"}
+requested_page = st.query_params.get("zomar_page")
+if requested_page in VALID_PAGES:
+    st.session_state.page = requested_page
+
 # =========================================================
 # 4. THEME SETTINGS
 # =========================================================
@@ -301,26 +308,91 @@ st.html(
     }}
 
     /* ======================================
-       NAVIGATION BUTTONS
+       RESPONSIVE NAVIGATION
     ====================================== */
 
-    [class*="st-key-nav_"] button {{
-        background: var(--gold) !important;
-        color: #FFFFFF !important;
-        border: 1px solid var(--gold) !important;
-        border-radius: 4px !important;
-        min-height: 42px;
-        font-weight: 600 !important;
-        transition: all 0.2s ease;
+    /* Desktop navigation and theme control are visible by default. */
+    .st-key-mobile_header_controls {{
+        display: none;
     }}
 
-    [class*="st-key-nav_"] button p {{
-        color: #FFFFFF !important;
+    .st-key-desktop_theme_toggle {{
+        display: block;
     }}
 
-    [class*="st-key-nav_"] button:hover {{
-        background: var(--gold-hover) !important;
-        border-color: var(--gold-hover) !important;
+    .st-key-desktop_navigation {{
+        display: block;
+    }}
+
+    /* Compact mobile hamburger dropdown. */
+    .zomar-mobile-menu {{
+        position: relative;
+        display: inline-block;
+        z-index: 1000;
+    }}
+
+    .zomar-mobile-menu summary {{
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 38px;
+        box-sizing: border-box;
+        padding: 0;
+        background: #FFFFFF !important;
+        color: #171717 !important;
+        border: 1px solid #D8D4CA;
+        border-radius: 5px;
+        box-shadow: 0 1px 4px rgba(0,0,0,.10);
+        font-size: 21px;
+        font-weight: 700;
+        line-height: 1;
+        user-select: none;
+    }}
+
+    .zomar-mobile-menu summary::-webkit-details-marker {{
+        display: none;
+    }}
+
+    .zomar-mobile-menu summary:hover,
+    .zomar-mobile-menu[open] summary {{
+        background: #FFFFFF !important;
+        color: #171717 !important;
+        border-color: var(--gold);
+    }}
+
+    .zomar-menu-panel {{
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        width: 148px;
+        padding: 5px;
+        box-sizing: border-box;
+        background: #FFFFFF !important;
+        border: 1px solid var(--gold);
+        border-radius: 6px;
+        box-shadow: 0 8px 20px rgba(0,0,0,.14);
+    }}
+
+    .zomar-menu-panel a {{
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        padding: 8px 9px;
+        margin: 1px 0;
+        border-radius: 4px;
+        color: #171717 !important;
+        background: #FFFFFF !important;
+        text-decoration: none !important;
+        font-size: 13px;
+        line-height: 1.25;
+    }}
+
+    .zomar-menu-panel a:hover {{
+        color: #171717 !important;
+        background: #F5EBC8 !important;
     }}
 
     /* ======================================
@@ -328,20 +400,21 @@ st.html(
     ====================================== */
 
     [class*="st-key-theme_toggle"] button {{
-        background: var(--gold) !important;
-        color: #FFFFFF !important;
-        border: 1px solid var(--gold) !important;
+        background: var(--surface) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
         border-radius: 50% !important;
         width: 43px;
         height: 43px;
         min-height: 43px;
         padding: 0 !important;
         font-size: 18px !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
     }}
 
     [class*="st-key-theme_toggle"] button:hover {{
-        background: var(--gold-hover) !important;
-        border-color: var(--gold-hover) !important;
+        background: var(--bg) !important;
+        border-color: var(--gold) !important;
     }}
 
     /* ======================================
@@ -367,6 +440,60 @@ st.html(
         border-color: var(--gold-hover) !important;
         color: #FFFFFF !important;
         transform: translateY(-2px);
+    }}
+
+
+    /* ======================================
+       MOBILE THEME TOGGLE — keep it distinct
+       from the general gold action buttons.
+    ====================================== */
+
+    div[class*="st-key-mobile_theme_toggle"] button,
+    div[class*="st-key-desktop_theme_toggle"] button {{
+        background: var(--surface) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 50% !important;
+        width: 43px !important;
+        height: 43px !important;
+        min-height: 43px !important;
+        padding: 0 !important;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+        transform: none !important;
+    }}
+
+    div[class*="st-key-mobile_theme_toggle"] button:hover,
+    div[class*="st-key-desktop_theme_toggle"] button:hover {{
+        background: var(--bg) !important;
+        color: var(--text) !important;
+        border-color: var(--gold) !important;
+    }}
+
+    div[class*="st-key-mobile_theme_toggle"] button *,
+    div[class*="st-key-desktop_theme_toggle"] button * {{
+        color: var(--text) !important;
+        fill: var(--text) !important;
+    }}
+
+    /* ======================================
+       MOBILE HEADER ALIGNMENT
+    ====================================== */
+
+    .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] {{
+        display: flex !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        gap: 8px !important;
+        width: max-content !important;
+        max-width: 100% !important;
+        margin-left: auto !important;
+    }}
+
+    .st-key-mobile_header_controls [data-testid="column"] {{
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: 0 !important;
     }}
 
     /* ======================================
@@ -640,9 +767,52 @@ st.html(
 
     @media (max-width: 768px) {{
 
+        .st-key-desktop_navigation,
+        .st-key-desktop_theme_toggle {{
+            display: none !important;
+        }}
+
+        .st-key-mobile_header_controls {{
+            display: block !important;
+            width: 100%;
+            margin: 0 !important;
+            padding: 0 !important;
+        }}
+
+        .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] {{
+            display: flex !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 8px !important;
+            width: max-content !important;
+            margin-left: auto !important;
+        }}
+
+        .st-key-mobile_header_controls [data-testid="column"] {{
+            flex: 0 0 auto !important;
+            width: auto !important;
+            min-width: 0 !important;
+        }}
+
         .block-container {{
+            padding-top: 0.05rem !important;
             padding-left: 1rem;
             padding-right: 1rem;
+        }}
+
+        /* Keep the first page section close to the mobile header. */
+        .block-container [data-testid="stVerticalBlock"] {{
+            gap: 0.12rem !important;
+        }}
+
+        .st-key-mobile_header_controls + div {{
+            margin-top: 0 !important;
+        }}
+
+        .st-key-mobile_header_controls {{
+            margin: 0 !important;
+            padding: 0 !important;
         }}
 
         .hero {{
@@ -659,13 +829,18 @@ st.html(
         }}
 
         .logo-container {{
-            width: 158px;
-            height: 72px;
+            width: 145px;
+            height: 54px;
         }}
 
         .logo-container img {{
-            width: 150px;
-            height: 68px;
+            width: 138px;
+            height: 50px;
+        }}
+
+        .st-key-mobile_header_controls {{
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
         }}
     }}
 
@@ -683,6 +858,7 @@ def format_price(price):
 
 def navigate(page):
     st.session_state.page = page
+    st.query_params["zomar_page"] = page
     st.rerun()
 
 
@@ -819,37 +995,65 @@ def filtered_properties():
 
 # =========================================================
 # 9. WEBSITE HEADER
-# Logo left, theme icon right.
+# Logo on the left; mobile menu and theme toggle share one row.
 # =========================================================
 
-header_left, header_space, header_right = st.columns(
-    [1.5, 5, 0.6],
+header_left, header_right = st.columns(
+    [3, 1.35],
     vertical_alignment="center"
 )
 
 with header_left:
-
     st.html(logo_html)
 
 with header_right:
-
-    theme_icon = (
-        "☀" if st.session_state.theme == "Dark"
-        else "☾"
-    )
-
-    if st.button(
-        theme_icon,
-        key="theme_toggle",
-        help="Switch between light and dark mode"
-    ):
-
-        st.session_state.theme = (
-            "Dark"
-            if st.session_state.theme == "Light"
-            else "Light"
+    # Mobile: menu trigger and theme toggle share one row.
+    with st.container(key="mobile_header_controls"):
+        mobile_menu_col, mobile_theme_col = st.columns(
+            [1, 1],
+            gap="small",
+            vertical_alignment="center"
         )
 
+        with mobile_menu_col:
+            # Native HTML details keeps the dropdown compact. Links navigate
+            # in the same tab, so the dropdown closes as the app reruns.
+            st.html(
+                """
+                <details class="zomar-mobile-menu">
+                    <summary aria-label="Open navigation menu">☰</summary>
+                    <nav class="zomar-menu-panel" aria-label="Main navigation">
+                        <a href="?zomar_page=Home" target="_self">Home</a>
+                        <a href="?zomar_page=Properties" target="_self">Properties</a>
+                        <a href="?zomar_page=About%20Us" target="_self">About Us</a>
+                        <a href="?zomar_page=Contact%20Us" target="_self">Contact Us</a>
+                    </nav>
+                </details>
+                """
+            )
+
+        with mobile_theme_col:
+            mobile_theme_icon = "☀" if st.session_state.theme == "Dark" else "☾"
+            if st.button(
+                mobile_theme_icon,
+                key="mobile_theme_toggle",
+                help="Switch between light and dark mode"
+            ):
+                st.session_state.theme = (
+                    "Dark" if st.session_state.theme == "Light" else "Light"
+                )
+                st.rerun()
+
+    # Desktop theme control; hidden on mobile by the responsive CSS.
+    desktop_theme_icon = "☀" if st.session_state.theme == "Dark" else "☾"
+    if st.button(
+        desktop_theme_icon,
+        key="desktop_theme_toggle",
+        help="Switch between light and dark mode"
+    ):
+        st.session_state.theme = (
+            "Dark" if st.session_state.theme == "Light" else "Light"
+        )
         st.rerun()
 
 
@@ -857,56 +1061,56 @@ with header_right:
 # 10. NAVIGATION
 # =========================================================
 
-st.write("")
+with st.container(key="desktop_navigation"):
 
-nav_cols = st.columns([1, 1, 1, 1, 4])
+    nav_cols = st.columns([1, 1, 1, 1, 4])
 
-with nav_cols[0]:
+    with nav_cols[0]:
 
-    if st.button(
-        "Home",
-        key="nav_home",
-        use_container_width=True
-    ):
-        navigate("Home")
+        if st.button(
+            "Home",
+            key="nav_home",
+            use_container_width=True
+        ):
+            navigate("Home")
+
+    with nav_cols[1]:
+
+        if st.button(
+            "Properties",
+            key="nav_properties",
+            use_container_width=True
+        ):
+            navigate("Properties")
+
+    with nav_cols[2]:
+
+        if st.button(
+            "About Us",
+            key="nav_about",
+            use_container_width=True
+        ):
+            navigate("About Us")
+
+    with nav_cols[3]:
+
+        if st.button(
+            "Contact Us",
+            key="nav_contact",
+            use_container_width=True
+        ):
+            navigate("Contact Us")
 
 
-with nav_cols[1]:
-
-    if st.button(
-        "Properties",
-        key="nav_properties",
-        use_container_width=True
-    ):
-        navigate("Properties")
-
-
-with nav_cols[2]:
-
-    if st.button(
-        "About Us",
-        key="nav_about",
-        use_container_width=True
-    ):
-        navigate("About Us")
-
-
-with nav_cols[3]:
-
-    if st.button(
-        "Contact Us",
-        key="nav_contact",
-        use_container_width=True
-    ):
-        navigate("Contact Us")
-
+# The desktop navigation block above is intentionally hidden on phones.
+# The compact hamburger popover in the header is shown instead.
 
 st.html(
     f"""
     <div style="
         height:1px;
         background:{BORDER};
-        margin:18px 0 28px;
+        margin:0;
     "></div>
     """
 )
@@ -1475,4 +1679,3 @@ st.html(
     </div>
     """
 )
-
