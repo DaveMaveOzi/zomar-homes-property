@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Properties — Atelier Estates{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero"><span class="eyebrow">THE PROPERTY EDIT</span><h1>Places worth<br><em>coming home to.</em></h1><p>A considered collection of homes, stays and opportunities.</p></section>
+<section class="section catalogue">
+  <div class="filter-row"><span class="eyebrow">BROWSE BY</span><div class="filters">
+    {% for key,label in [('all','All properties'),('sale','For sale'),('rent','For rent'),('shortlet','Shortlets'),('land','Land')] %}
+    <a class="filter-pill {{ 'active' if active == key else '' }}" href="{{ url_for('properties', type=key) }}">{{ label }}</a>
+    {% endfor %}
+  </div><span class="result-count">{{ listings|length }} PLACES</span></div>
+  <div class="property-grid catalogue-grid">
+  {% for item in listings %}
+    <a class="property-card reveal" href="{{ url_for('property_detail', property_id=item.id) }}">
+      <div class="property-photo"><img src="{{ item.image }}" alt="{{ item.title }}"><span class="property-tag">{{ item.tag }}</span><span class="photo-arrow">↗</span></div>
+      <div class="property-meta"><span>{{ item.type }}</span><span>{{ item.location }}</span></div>
+      <div class="property-title-row"><h3>{{ item.title }}</h3><strong>{{ item.price }}</strong></div>
+      <div class="property-specs"><span>{{ item.beds if item.beds else '—' }} beds</span><span>{{ item.baths if item.baths else '—' }} baths</span><span>{{ item.area }}</span></div>
+    </a>
+  {% else %}
+    <div class="empty-state"><h2>Nothing in this collection just yet.</h2><p>Try another category or speak with our team.</p><a class="button button-dark" href="{{ url_for('contact') }}">Ask our team ↗</a></div>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}The team — Atelier Estates{% endblock %}
+{% block content %}
+<section class="page-hero compact-hero"><span class="eyebrow">GOOD PEOPLE. GOOD PROPERTY SENSE.</span><h1>Meet the people<br><em>in your corner.</em></h1><p>Experienced, approachable and always on your side of the table.</p></section>
+<section class="section team-section"><div class="team-grid">{% for member in members %}<article class="team-card reveal"><div class="team-photo"><img src="{{ member.image }}" alt="{{ member.name }}"></div><div class="team-info"><h3>{{ member.name }}</h3><span>{{ member.role }}</span></div></article>{% endfor %}</div></section>
+<section class="team-note"><p>Good property work is a team effort. <em>Let's make yours a good one.</em></p><a class="text-link" href="{{ url_for('contact') }}">Talk to our team →</a></section>
+{% endblock %}
