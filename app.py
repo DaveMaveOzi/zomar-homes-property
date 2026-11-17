@@ -829,13 +829,13 @@ st.html(
         }}
 
         .logo-container {{
-            width: 145px;
-            height: 54px;
+            width: 172px;
+            height: 64px;
         }}
 
         .logo-container img {{
-            width: 138px;
-            height: 50px;
+            width: 165px;
+            height: 60px;
         }}
 
         .st-key-mobile_header_controls {{
