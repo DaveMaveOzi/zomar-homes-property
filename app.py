@@ -1,5 +1,11 @@
 import streamlit as st
 import base64
+import os
+import sqlite3
+import hashlib
+import hmac
+import secrets as pysecrets
+from contextlib import contextmanager
 from pathlib import Path
 from html import escape
 
@@ -33,7 +39,10 @@ defaults = {
     "selected_property": None,
     "search_query": "",
     "filter_type": "All",
-    "filter_status": "All"
+    "filter_status": "All",
+    "admin_authenticated": False,
+    "auth_role": None,
+    "auth_username": None
 }
 
 for key, value in defaults.items():
@@ -42,7 +51,7 @@ for key, value in defaults.items():
 
 # Mobile dropdown links use a URL change so the browser closes the popover
 # immediately after a selection. Keep the selected page in session state.
-VALID_PAGES = {"Home", "Properties", "About Us", "Contact Us", "Property Details"}
+VALID_PAGES = {"Home", "Properties", "About Us", "Contact Us", "Property Details", "Admin"}
 requested_page = st.query_params.get("zomar_page")
 if requested_page in VALID_PAGES:
     st.session_state.page = requested_page
@@ -174,6 +183,156 @@ properties = [
         )
     }
 ]
+
+
+# =========================================================
+# 5A. LOCAL SQLITE PROPERTY STORE (PROTOTYPE)
+# =========================================================
+
+PROJECT_FOLDER = Path(__file__).resolve().parent
+DATABASE_PATH = PROJECT_FOLDER / "zomar_properties.db"
+
+@contextmanager
+def get_db_connection():
+    connection = sqlite3.connect(DATABASE_PATH, timeout=20)
+    connection.row_factory = sqlite3.Row
+    try:
+        yield connection
+    finally:
+        connection.close()
+
+
+def initialise_property_database():
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS properties (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                location TEXT NOT NULL,
+                price REAL NOT NULL,
+                property_type TEXT NOT NULL,
+                availability TEXT NOT NULL
+                    CHECK (availability IN ('For Sale', 'For Rent', 'Shortlet')),
+                booking_status TEXT NOT NULL DEFAULT 'Available'
+                    CHECK (booking_status IN ('Available', 'Fully Booked')),
+                bedrooms INTEGER NOT NULL DEFAULT 0,
+                bathrooms INTEGER NOT NULL DEFAULT 0,
+                area TEXT NOT NULL DEFAULT '',
+                image TEXT NOT NULL DEFAULT '',
+                description TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.commit()
+
+        count = connection.execute(
+            "SELECT COUNT(*) FROM properties"
+        ).fetchone()[0]
+
+        # Seed the existing sample listings once, only when the database is empty.
+        if count == 0:
+            for item in properties:
+                connection.execute(
+                    """
+                    INSERT INTO properties
+                    (name, location, price, property_type, availability,
+                     booking_status, bedrooms, bathrooms, area, image, description)
+                    VALUES (?, ?, ?, ?, ?, 'Available', ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        item["name"], item["location"], item["price"],
+                        item["type"], item["status"], item["bedrooms"],
+                        item["bathrooms"], item["area"], item["image"],
+                        item["description"]
+                    )
+                )
+            connection.commit()
+
+
+def load_properties():
+    with get_db_connection() as connection:
+        rows = connection.execute(
+            "SELECT * FROM properties ORDER BY created_at DESC, id DESC"
+        ).fetchall()
+
+    loaded = []
+    for row in rows:
+        loaded.append({
+            "id": row["id"],
+            "name": row["name"],
+            "location": row["location"],
+            "price": row["price"],
+            "type": row["property_type"],
+            "status": row["availability"],
+            "booking_status": row["booking_status"],
+            "bedrooms": row["bedrooms"],
+            "bathrooms": row["bathrooms"],
+            "area": row["area"],
+            "image": row["image"],
+            "description": row["description"]
+        })
+    return loaded
+
+
+def insert_property(item):
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO properties
+            (name, location, price, property_type, availability,
+             booking_status, bedrooms, bathrooms, area, image, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item["name"], item["location"], item["price"], item["type"],
+                item["status"], item.get("booking_status", "Available"),
+                item["bedrooms"], item["bathrooms"], item["area"],
+                item["image"], item["description"]
+            )
+        )
+        connection.commit()
+
+
+def update_shortlet_booking(property_id, booking_status):
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            UPDATE properties
+            SET booking_status = ?
+            WHERE id = ? AND availability = 'Shortlet'
+            """,
+            (booking_status, property_id)
+        )
+        connection.commit()
+
+
+def remove_property(property_id):
+    with get_db_connection() as connection:
+        connection.execute(
+            "DELETE FROM properties WHERE id = ?",
+            (property_id,)
+        )
+        connection.commit()
+
+
+initialise_property_database()
+properties = load_properties()
+
 
 # =========================================================
 # 6. LOGO LOADING
@@ -970,6 +1129,99 @@ def location_icon():
     """
 
 
+
+def property_status_label(item):
+    if item["status"] == "Shortlet":
+        return f"Shortlet · {item.get('booking_status', 'Available')}"
+    return item["status"]
+
+
+def display_property_image(image_value, **kwargs):
+    if isinstance(image_value, str) and image_value.startswith("data:image/"):
+        try:
+            encoded = image_value.split(",", 1)[1]
+            st.image(base64.b64decode(encoded), **kwargs)
+            return
+        except Exception:
+            st.warning("This uploaded property image could not be displayed.")
+            return
+    st.image(image_value, **kwargs)
+
+
+def configured_owner_credentials():
+    username = os.getenv("ZOMAR_OWNER_USERNAME")
+    password = os.getenv("ZOMAR_OWNER_PASSWORD")
+    try:
+        owner_settings = st.secrets.get("owner", {})
+        username = owner_settings.get("username", username)
+        password = owner_settings.get("password", password)
+    except Exception:
+        pass
+    return username, password
+
+
+def password_digest(password, salt=None):
+    salt = salt or pysecrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 310000
+    ).hex()
+    return f"{salt}${digest}"
+
+
+def verify_password(password, stored_hash):
+    try:
+        salt, expected = stored_hash.split("$", 1)
+    except ValueError:
+        return False
+    actual = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 310000
+    ).hex()
+    return hmac.compare_digest(actual, expected)
+
+
+def find_admin_user(username):
+    with get_db_connection() as connection:
+        return connection.execute(
+            "SELECT * FROM admin_users WHERE username = ? COLLATE NOCASE",
+            (username.strip(),)
+        ).fetchone()
+
+
+def create_admin_user(full_name, email, username, password):
+    with get_db_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO admin_users
+            (full_name, email, username, password_hash)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                full_name.strip(), email.strip().lower(), username.strip(),
+                password_digest(password)
+            )
+        )
+        connection.commit()
+
+
+def set_admin_user_active(user_id, active):
+    with get_db_connection() as connection:
+        connection.execute(
+            "UPDATE admin_users SET is_active = ? WHERE id = ?",
+            (1 if active else 0, user_id)
+        )
+        connection.commit()
+
+
+def list_admin_users():
+    with get_db_connection() as connection:
+        return connection.execute(
+            """
+            SELECT id, full_name, email, username, is_active, created_at
+            FROM admin_users ORDER BY created_at DESC
+            """
+        ).fetchall()
+
+
 def property_card(item):
 
     st.html(
@@ -987,7 +1239,7 @@ def property_card(item):
             <div class="property-info">
 
                 <div class="property-status">
-                    {escape(item['status'])}
+                    {escape(property_status_label(item))}
                 </div>
 
                 <div class="property-name">
@@ -1186,6 +1438,7 @@ st.html(
 )
 
 
+
 # =========================================================
 # 11. HOME PAGE
 # =========================================================
@@ -1325,7 +1578,8 @@ elif st.session_state.page == "Properties":
             [
                 "All",
                 "For Sale",
-                "For Rent"
+                "For Rent",
+                "Shortlet"
             ],
             key="filter_status"
         )
@@ -1379,7 +1633,7 @@ elif st.session_state.page == "Property Details":
 
         st.write("")
 
-        st.image(
+        display_property_image(
             selected["image"],
             use_container_width=True
         )
@@ -1402,7 +1656,7 @@ elif st.session_state.page == "Property Details":
                 </div>
 
                 <div class="property-status">
-                    {escape(selected['status'])}
+                    {escape(property_status_label(selected))}
                 </div>
 
                 <div class="property-price"
@@ -1480,7 +1734,7 @@ elif st.session_state.page == "Property Details":
                         Availability
                     </p>
 
-                    <strong>{escape(selected['status'])}</strong>
+                    <strong>{escape(property_status_label(selected))}</strong>
 
                     <hr>
 
@@ -1502,8 +1756,258 @@ elif st.session_state.page == "Property Details":
             navigate("Properties")
 
 
+
 # =========================================================
-# 14. ABOUT US PAGE
+# 14. ADMIN DASHBOARD (LOCAL PROTOTYPE)
+# =========================================================
+
+elif st.session_state.page == "Admin":
+
+    page_heading(
+        "Private Administration",
+        "Authorised company personnel only."
+    )
+
+    owner_username, owner_password = configured_owner_credentials()
+
+    if not owner_username or not owner_password:
+        st.error("The initial company owner account has not been configured.")
+        st.markdown(
+            """
+            Create `.streamlit/secrets.toml` and add the `[owner]` credentials
+            shown in the setup guide. Do not put owner credentials in app.py
+            or commit secrets.toml to GitHub.
+            """
+        )
+    elif not st.session_state.admin_authenticated:
+        st.markdown("### Secure sign in")
+        with st.form("zomar_private_login"):
+            entered_username = st.text_input("Username")
+            entered_password = st.text_input("Password", type="password")
+            sign_in = st.form_submit_button("Sign in", use_container_width=True)
+
+        if sign_in:
+            if hmac.compare_digest(entered_username, str(owner_username)):
+                if hmac.compare_digest(entered_password, str(owner_password)):
+                    st.session_state.admin_authenticated = True
+                    st.session_state.auth_role = "owner"
+                    st.session_state.auth_username = str(owner_username)
+                    st.rerun()
+                else:
+                    st.error("The username or password is incorrect.")
+            else:
+                user = find_admin_user(entered_username)
+                if user and user["is_active"] and verify_password(
+                    entered_password, user["password_hash"]
+                ):
+                    st.session_state.admin_authenticated = True
+                    st.session_state.auth_role = "admin"
+                    st.session_state.auth_username = user["username"]
+                    st.rerun()
+                else:
+                    st.error("The username or password is incorrect, or this account is inactive.")
+
+    else:
+        role = st.session_state.auth_role
+        username = st.session_state.auth_username
+
+        header_cols = st.columns([3, 1])
+        with header_cols[0]:
+            st.success(
+                "Signed in as Company Owner." if role == "owner"
+                else f"Signed in as Administrator: {username}"
+            )
+        with header_cols[1]:
+            if st.button("Sign out", key="private_sign_out"):
+                st.session_state.admin_authenticated = False
+                st.session_state.auth_role = None
+                st.session_state.auth_username = None
+                st.rerun()
+
+        properties = load_properties()
+        total_count = len(properties)
+        sale_count = sum(p["status"] == "For Sale" for p in properties)
+        rent_count = sum(p["status"] == "For Rent" for p in properties)
+        shortlet_count = sum(p["status"] == "Shortlet" for p in properties)
+        booked_count = sum(
+            p["status"] == "Shortlet"
+            and p.get("booking_status") == "Fully Booked"
+            for p in properties
+        )
+
+        metrics = st.columns(5)
+        metrics[0].metric("Total listings", total_count)
+        metrics[1].metric("For sale", sale_count)
+        metrics[2].metric("For rent", rent_count)
+        metrics[3].metric("Shortlets", shortlet_count)
+        metrics[4].metric("Fully booked", booked_count)
+
+        if role == "owner":
+            st.divider()
+            st.markdown("### Create administrator account")
+            st.caption(
+                "Only the company owner can create administrator accounts. "
+                "Give the new administrator their username and temporary password privately."
+            )
+            with st.form("create_admin_account", clear_on_submit=True):
+                new_full_name = st.text_input("Administrator's full name")
+                new_email = st.text_input("Company email address")
+                new_username = st.text_input("Username")
+                new_password = st.text_input(
+                    "Temporary password (minimum 12 characters)",
+                    type="password"
+                )
+                create_account = st.form_submit_button(
+                    "Create administrator", use_container_width=True
+                )
+
+            if create_account:
+                if not all([
+                    new_full_name.strip(), new_email.strip(),
+                    new_username.strip(), new_password
+                ]):
+                    st.error("Complete all administrator account fields.")
+                elif "@" not in new_email or "." not in new_email.rsplit("@", 1)[-1]:
+                    st.error("Enter a valid email address.")
+                elif len(new_password) < 12:
+                    st.error("Use a temporary password with at least 12 characters.")
+                else:
+                    try:
+                        create_admin_user(
+                            new_full_name, new_email, new_username, new_password
+                        )
+                        st.success(
+                            f"Administrator account created for {new_full_name}. "
+                            "Share the username and temporary password privately."
+                        )
+                        st.rerun()
+                    except sqlite3.IntegrityError:
+                        st.error("That email address or username is already registered.")
+
+            st.divider()
+            st.markdown("### Administrator accounts")
+            admin_users = list_admin_users()
+            if not admin_users:
+                st.info("No administrator accounts have been created yet.")
+            for user in admin_users:
+                with st.container(border=True):
+                    info, action = st.columns([3, 1])
+                    with info:
+                        st.markdown(f"**{user['full_name']}**")
+                        st.caption(
+                            f"{user['email']} · Username: {user['username']} · "
+                            f"{'Active' if user['is_active'] else 'Inactive'}"
+                        )
+                    with action:
+                        button_label = "Deactivate" if user["is_active"] else "Activate"
+                        if st.button(
+                            button_label, key=f"toggle_admin_{user['id']}",
+                            use_container_width=True
+                        ):
+                            set_admin_user_active(
+                                user["id"], not bool(user["is_active"])
+                            )
+                            st.rerun()
+
+        st.divider()
+        st.markdown("### Upload a property")
+        with st.form("zomar_add_property", clear_on_submit=True):
+            name = st.text_input("Property name")
+            location = st.text_input("Location")
+            form_cols = st.columns(2)
+            with form_cols[0]:
+                price = st.number_input("Price (NGN)", min_value=0, step=100000, value=0)
+                property_type = st.selectbox(
+                    "Property type",
+                    ["Apartment", "Duplex", "Detached House", "Villa", "Land", "Other"]
+                )
+                availability = st.selectbox(
+                    "Availability", ["For Sale", "For Rent", "Shortlet"]
+                )
+            with form_cols[1]:
+                bedrooms = st.number_input("Bedrooms", min_value=0, max_value=50, value=0)
+                bathrooms = st.number_input("Bathrooms", min_value=0, max_value=50, value=0)
+                area = st.text_input("Property area", placeholder="e.g. 220 sqm")
+            description = st.text_area("Description")
+            image_upload = st.file_uploader(
+                "Upload property image (JPG, PNG or WEBP; max 5 MB)",
+                type=["jpg", "jpeg", "png", "webp"]
+            )
+            image_url = st.text_input("Or provide an image URL", placeholder="https://...")
+            submitted_property = st.form_submit_button("Add property", use_container_width=True)
+
+            if submitted_property:
+                if not name.strip() or not location.strip():
+                    st.error("Enter both a property name and location.")
+                elif price <= 0 or not description.strip():
+                    st.error("Enter a price greater than zero and a description.")
+                elif not image_upload and not image_url.strip():
+                    st.error("Upload a property image or provide an image URL.")
+                elif image_upload and len(image_upload.getvalue()) > 5 * 1024 * 1024:
+                    st.error("The image is larger than 5 MB.")
+                else:
+                    if image_upload:
+                        image_value = (
+                            f"data:{image_upload.type};base64,"
+                            + base64.b64encode(image_upload.getvalue()).decode("ascii")
+                        )
+                    else:
+                        image_value = image_url.strip()
+                    insert_property({
+                        "name": name.strip(), "location": location.strip(),
+                        "price": float(price), "type": property_type,
+                        "status": availability, "booking_status": "Available",
+                        "bedrooms": int(bedrooms), "bathrooms": int(bathrooms),
+                        "area": area.strip(), "image": image_value,
+                        "description": description.strip()
+                    })
+                    st.success(f"{name.strip()} has been added.")
+                    st.rerun()
+
+        st.divider()
+        st.markdown("### Manage existing properties")
+        for item in load_properties():
+            with st.container(border=True):
+                row = st.columns([3, 1.2, 1.3])
+                with row[0]:
+                    st.markdown(f"**{item['name']}**")
+                    st.caption(
+                        f"{item['location']} · {item['type']} · "
+                        f"{property_status_label(item)}"
+                    )
+                    st.write(format_price(item["price"]))
+                with row[1]:
+                    if item["status"] == "Shortlet":
+                        booking_state = st.selectbox(
+                            "Shortlet status", ["Available", "Fully Booked"],
+                            index=1 if item.get("booking_status") == "Fully Booked" else 0,
+                            key=f"booking_state_{item['id']}"
+                        )
+                        if st.button("Save status", key=f"save_booking_{item['id']}"):
+                            update_shortlet_booking(item["id"], booking_state)
+                            st.rerun()
+                with row[2]:
+                    delete_label = (
+                        "Mark sold & remove" if item["status"] == "For Sale"
+                        else "Mark rented & remove" if item["status"] == "For Rent"
+                        else "Delete listing"
+                    )
+                    confirmed = st.checkbox("Confirm", key=f"confirm_delete_{item['id']}")
+                    if st.button(
+                        delete_label, key=f"delete_property_{item['id']}",
+                        disabled=not confirmed, use_container_width=True
+                    ):
+                        remove_property(item["id"])
+                        st.rerun()
+
+        st.caption(
+            "Local prototype: sold and rented listings are removed permanently. "
+            "No transaction history or audit log is retained."
+        )
+
+
+# =========================================================
+# 15. ABOUT US PAGE
 # =========================================================
 
 elif st.session_state.page == "About Us":
