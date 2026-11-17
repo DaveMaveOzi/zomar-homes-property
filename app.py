@@ -792,26 +792,25 @@ st.html(
             padding: 0 !important;
         }}
 
-        /* Reverse the two header columns on mobile: controls on the left,
-           larger logo on the right. */
+        /* Keep the logo on the left on mobile, with the controls alongside it. */
         div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) {{
             display: flex !important;
-            flex-direction: row-reverse !important;
+            flex-direction: row !important;
             align-items: center !important;
-            justify-content: space-between !important;
+            justify-content: flex-start !important;
             gap: 4px !important;
             width: 100% !important;
         }}
 
         div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) > [data-testid="column"]:first-child {{
-            flex: 0 0 70% !important;
-            width: 70% !important;
+            flex: 0 0 65% !important;
+            width: 65% !important;
             min-width: 0 !important;
         }}
 
         div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) > [data-testid="column"]:last-child {{
-            flex: 0 0 30% !important;
-            width: 30% !important;
+            flex: 0 0 35% !important;
+            width: 35% !important;
             min-width: 0 !important;
         }}
 
@@ -820,7 +819,7 @@ st.html(
             flex-wrap: nowrap !important;
             align-items: center !important;
             justify-content: flex-start !important;
-            gap: 7px !important;
+            gap: 3px !important;
             width: max-content !important;
             max-width: 100% !important;
             margin-left: 0 !important;
@@ -866,23 +865,24 @@ st.html(
         }}
 
         .zomar-logo-link {{
-            margin-left: auto;
+            margin-left: 0 !important;
+            margin-right: 0 !important;
             max-width: 100%;
         }}
 
         .logo-container {{
             width: 344px;
-            height: 128px;
-            max-width: calc(100vw - 112px);
-            justify-content: flex-end;
-            margin-left: auto;
+            height: 160px;
+            max-width: 100%;
+            justify-content: flex-start;
+            margin-left: 0 !important;
         }}
 
         .logo-container img {{
-            width: 330px;
-            height: 120px;
+            width: 660px;
+            height: 240px;
             max-width: 100%;
-            object-position: right center;
+            object-position: left center;
         }}
 
         .zomar-menu-panel {{
@@ -1047,7 +1047,7 @@ def filtered_properties():
 
 # =========================================================
 # 9. WEBSITE HEADER
-# Desktop: logo left. Mobile: controls left and logo right.
+# Desktop and mobile: logo left, with mobile controls beside it.
 # =========================================================
 
 header_left, header_right = st.columns(
