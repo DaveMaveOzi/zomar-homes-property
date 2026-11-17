@@ -819,8 +819,8 @@ st.html(
             flex-wrap: nowrap !important;
             align-items: center !important;
             justify-content: flex-start !important;
-            gap: 3px !important;
-            width: max-content !important;
+            gap: 4px !important;
+            width: fit-content !important;
             max-width: 100% !important;
             margin-left: 0 !important;
         }}
@@ -871,18 +871,21 @@ st.html(
         }}
 
         .logo-container {{
-            width: 344px;
-            height: 160px;
+            width: 220px;
+            height: 100px;
             max-width: 100%;
             justify-content: flex-start;
             margin-left: 0 !important;
+            overflow: hidden;
         }}
 
         .logo-container img {{
-            width: 660px;
-            height: 240px;
+            width: 220px;
+            height: 100px;
             max-width: 100%;
+            object-fit: contain;
             object-position: left center;
+            transform: translateX(-34px);
         }}
 
         .zomar-menu-panel {{
@@ -1062,8 +1065,8 @@ with header_right:
     # Mobile: menu trigger and theme toggle share one row.
     with st.container(key="mobile_header_controls"):
         mobile_menu_col, mobile_theme_col = st.columns(
-            [1, 1],
-            gap="small",
+            [0.1, 0.1],
+            gap="none",
             vertical_alignment="center"
         )
 
