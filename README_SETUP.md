@@ -10,7 +10,10 @@
 - Owner can activate/deactivate administrator accounts.
 - Admins can upload property listings for Sale, Rent, and Shortlet.
 - Admins can set shortlets to Available or Fully Booked.
-- Admins can remove sold/rented listings.
+- Administrators and the owner can permanently delete individual listings or clear the entire property inventory after an explicit confirmation.
+- Demo listings are seeded only once; deleting all listings will not cause them to reappear after restart.
+- Property upload accepts multiple JPG, PNG, or WEBP images, including more than 12 photos. The first photo is the main listing image and the remaining photos appear in the property details gallery.
+- The sign-in page includes a Forgot password? help panel. Admin password resets are handled by the owner; the sign-in button is compact.
 - Passwords for administrator accounts are stored as PBKDF2-HMAC-SHA256 hashes, not plain text.
 - SQLite stores properties and admin accounts locally.
 
@@ -36,7 +39,7 @@ py -m streamlit run app.py
 
 10. Sign in with the owner credentials from `.streamlit/secrets.toml`.
 11. In the Owner Dashboard, use **Create administrator account**. Enter the staff member's name, company email, username, and a temporary password of at least 12 characters. Give those credentials to the staff member privately.
-12. The administrator signs in at the same private URL. The owner can deactivate or reactivate their account from **Administrator accounts**.
+12. The administrator signs in at the same private URL. The owner can deactivate or reactivate their account and reset its password from **Administrator accounts**. The sign-in button is compact rather than full-width.
 
 ## Streamlit Community Cloud setup
 
@@ -55,14 +58,14 @@ Never commit secrets.toml to GitHub.
 This is a local SQLite prototype, not production-ready hosted inventory:
 
 - Streamlit Community Cloud local filesystem is not durable. SQLite records and uploaded image data can be lost on restart, rebuild, or redeploy.
-- The app currently stores uploaded image data in SQLite as base64, intended only for a small prototype.
+- The app currently stores every uploaded image in SQLite as base64, intended only for a small prototype. There is no fixed 12-image limit, but large galleries can make the database very large and slow.
 - Admin accounts are stored in SQLite; on Streamlit Cloud they can also be lost if the database file is lost.
 - The owner account is configured through secrets, not stored in the users table.
 - The private route is intentionally unlinked from the public UI, but a hidden URL is not a security boundary. Authentication and server-side role checks protect it.
-- No password reset or invitation email is implemented; the owner shares a temporary password privately.
+- Administrator password resets are owner-managed: the owner can set a new temporary password from the Owner Dashboard and share it privately. The Forgot password? panel explains this process but does not send password-reset emails. If the owner forgets the owner password, update it in Streamlit secrets and restart the app.
 - There is no forced password change on first admin login.
 - No audit trail exists.
-- Sold/rented properties are deleted rather than archived.
+- Deleting a property or clearing the inventory is permanent; there is no archive or recovery function.
 - Shortlet Fully Booked is a manual flag, not a date-based booking calendar. It does not prevent overlapping reservations.
 - Uploaded files have basic type/size limits but no malware scanning.
 

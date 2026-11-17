@@ -4,6 +4,7 @@ import os
 import sqlite3
 import hashlib
 import hmac
+import json
 import secrets as pysecrets
 from contextlib import contextmanager
 from pathlib import Path
@@ -42,7 +43,8 @@ defaults = {
     "filter_status": "All",
     "admin_authenticated": False,
     "auth_role": None,
-    "auth_username": None
+    "auth_username": None,
+    "show_forgot_password": False
 }
 
 for key, value in defaults.items():
@@ -220,11 +222,29 @@ def initialise_property_database():
                 bathrooms INTEGER NOT NULL DEFAULT 0,
                 area TEXT NOT NULL DEFAULT '',
                 image TEXT NOT NULL DEFAULT '',
+                images_json TEXT NOT NULL DEFAULT '[]',
                 description TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        # A persistent marker prevents demo listings from being re-created after
+        # the owner/admin intentionally removes every property.
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS app_settings (
+                setting_key TEXT PRIMARY KEY,
+                setting_value TEXT NOT NULL
+            )
+            """
+        )
+        # Migrate databases created by earlier versions of this prototype.
+        property_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(properties)").fetchall()
+        }
+        if "images_json" not in property_columns:
+            connection.execute("ALTER TABLE properties ADD COLUMN images_json TEXT NOT NULL DEFAULT '[]'")
+
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS admin_users (
@@ -240,27 +260,32 @@ def initialise_property_database():
         )
         connection.commit()
 
-        count = connection.execute(
-            "SELECT COUNT(*) FROM properties"
-        ).fetchone()[0]
-
-        # Seed the existing sample listings once, only when the database is empty.
-        if count == 0:
-            for item in properties:
-                connection.execute(
-                    """
-                    INSERT INTO properties
-                    (name, location, price, property_type, availability,
-                     booking_status, bedrooms, bathrooms, area, image, description)
-                    VALUES (?, ?, ?, ?, ?, 'Available', ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        item["name"], item["location"], item["price"],
-                        item["type"], item["status"], item["bedrooms"],
-                        item["bathrooms"], item["area"], item["image"],
-                        item["description"]
+        seeded = connection.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key = 'demo_properties_seeded'"
+        ).fetchone()
+        if seeded is None:
+            count = connection.execute("SELECT COUNT(*) FROM properties").fetchone()[0]
+            # Seed only on the first-ever initialisation. Deleting all listings later
+            # will not cause the demo properties to return after a restart.
+            if count == 0:
+                for item in properties:
+                    connection.execute(
+                        """
+                        INSERT INTO properties
+                        (name, location, price, property_type, availability,
+                         booking_status, bedrooms, bathrooms, area, image, images_json, description)
+                        VALUES (?, ?, ?, ?, ?, 'Available', ?, ?, ?, ?, '[]', ?)
+                        """,
+                        (
+                            item["name"], item["location"], item["price"],
+                            item["type"], item["status"], item["bedrooms"],
+                            item["bathrooms"], item["area"], item["image"],
+                            item["description"]
+                        )
                     )
-                )
+            connection.execute(
+                "INSERT INTO app_settings (setting_key, setting_value) VALUES ('demo_properties_seeded', '1')"
+            )
             connection.commit()
 
 
@@ -284,6 +309,7 @@ def load_properties():
             "bathrooms": row["bathrooms"],
             "area": row["area"],
             "image": row["image"],
+            "images": json.loads(row["images_json"] or "[]") if "images_json" in row.keys() else [],
             "description": row["description"]
         })
     return loaded
@@ -295,14 +321,14 @@ def insert_property(item):
             """
             INSERT INTO properties
             (name, location, price, property_type, availability,
-             booking_status, bedrooms, bathrooms, area, image, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             booking_status, bedrooms, bathrooms, area, image, images_json, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 item["name"], item["location"], item["price"], item["type"],
                 item["status"], item.get("booking_status", "Available"),
                 item["bedrooms"], item["bathrooms"], item["area"],
-                item["image"], item["description"]
+                item["image"], json.dumps(item.get("images", [])), item["description"]
             )
         )
         connection.commit()
@@ -323,10 +349,14 @@ def update_shortlet_booking(property_id, booking_status):
 
 def remove_property(property_id):
     with get_db_connection() as connection:
-        connection.execute(
-            "DELETE FROM properties WHERE id = ?",
-            (property_id,)
-        )
+        connection.execute("DELETE FROM properties WHERE id = ?", (property_id,))
+        connection.commit()
+
+
+def remove_all_properties():
+    with get_db_connection() as connection:
+        connection.execute("DELETE FROM properties")
+        connection.commit()
         connection.commit()
 
 
@@ -1203,6 +1233,15 @@ def create_admin_user(full_name, email, username, password):
         connection.commit()
 
 
+def reset_admin_user_password(user_id, new_password):
+    with get_db_connection() as connection:
+        connection.execute(
+            "UPDATE admin_users SET password_hash = ? WHERE id = ?",
+            (password_digest(new_password), user_id)
+        )
+        connection.commit()
+
+
 def set_admin_user_active(user_id, active):
     with get_db_connection() as connection:
         connection.execute(
@@ -1633,10 +1672,18 @@ elif st.session_state.page == "Property Details":
 
         st.write("")
 
-        display_property_image(
-            selected["image"],
-            use_container_width=True
-        )
+        gallery_images = selected.get("images") or []
+        if gallery_images:
+            display_property_image(selected["image"], use_container_width=True)
+            if len(gallery_images) > 1:
+                st.markdown("#### More photos")
+                for start in range(0, len(gallery_images[1:]), 3):
+                    photo_cols = st.columns(3)
+                    for col, photo in zip(photo_cols, gallery_images[1:][start:start + 3]):
+                        with col:
+                            display_property_image(photo, use_container_width=True)
+        else:
+            display_property_image(selected["image"], use_container_width=True)
 
         st.write("")
 
@@ -1784,7 +1831,7 @@ elif st.session_state.page == "Admin":
         with st.form("zomar_private_login"):
             entered_username = st.text_input("Username")
             entered_password = st.text_input("Password", type="password")
-            sign_in = st.form_submit_button("Sign in", use_container_width=True)
+            sign_in = st.form_submit_button("Sign in", use_container_width=False)
 
         if sign_in:
             if hmac.compare_digest(entered_username, str(owner_username)):
@@ -1806,6 +1853,24 @@ elif st.session_state.page == "Admin":
                     st.rerun()
                 else:
                     st.error("The username or password is incorrect, or this account is inactive.")
+
+        if st.button("Forgot password?", key="show_password_recovery", type="tertiary"):
+            st.session_state.show_forgot_password = not st.session_state.show_forgot_password
+
+        if st.session_state.show_forgot_password:
+            with st.container(border=True):
+                st.markdown("**Password recovery**")
+                st.write(
+                    "For security, administrator password resets are handled by the "
+                    "Company Owner. Contact the owner using your registered company "
+                    "email address and request a password reset. The owner can issue "
+                    "a new temporary password from the Owner Dashboard."
+                )
+                st.caption(
+                    "If you are the Company Owner and have forgotten your password, "
+                    "update the owner password in your private Streamlit secrets settings "
+                    "and restart the application. There is no public owner password reset."
+                )
 
     else:
         role = st.session_state.auth_role
@@ -1908,6 +1973,24 @@ elif st.session_state.page == "Admin":
                                 user["id"], not bool(user["is_active"])
                             )
                             st.rerun()
+                    with st.expander("Reset this administrator's password"):
+                        with st.form(f"reset_admin_password_{user['id']}"):
+                            reset_password = st.text_input(
+                                "New temporary password (minimum 12 characters)",
+                                type="password", key=f"reset_password_value_{user['id']}"
+                            )
+                            reset_submitted = st.form_submit_button(
+                                "Save new password", use_container_width=False
+                            )
+                        if reset_submitted:
+                            if len(reset_password) < 12:
+                                st.error("Use a password with at least 12 characters.")
+                            else:
+                                reset_admin_user_password(user["id"], reset_password)
+                                st.success(
+                                    "Password reset. Share the new temporary password "
+                                    "with the administrator privately."
+                                )
 
         st.divider()
         st.markdown("### Upload a property")
@@ -1929,11 +2012,13 @@ elif st.session_state.page == "Admin":
                 bathrooms = st.number_input("Bathrooms", min_value=0, max_value=50, value=0)
                 area = st.text_input("Property area", placeholder="e.g. 220 sqm")
             description = st.text_area("Description")
-            image_upload = st.file_uploader(
-                "Upload property image (JPG, PNG or WEBP; max 5 MB)",
-                type=["jpg", "jpeg", "png", "webp"]
+            image_uploads = st.file_uploader(
+                "Upload property photos (JPG, PNG or WEBP; up to 5 MB per image)",
+                type=["jpg", "jpeg", "png", "webp"],
+                accept_multiple_files=True,
+                help="You can select more than 12 images. The first image is used as the main listing photo."
             )
-            image_url = st.text_input("Or provide an image URL", placeholder="https://...")
+            image_url = st.text_input("Or provide a main image URL", placeholder="https://...")
             submitted_property = st.form_submit_button("Add property", use_container_width=True)
 
             if submitted_property:
@@ -1941,24 +2026,25 @@ elif st.session_state.page == "Admin":
                     st.error("Enter both a property name and location.")
                 elif price <= 0 or not description.strip():
                     st.error("Enter a price greater than zero and a description.")
-                elif not image_upload and not image_url.strip():
-                    st.error("Upload a property image or provide an image URL.")
-                elif image_upload and len(image_upload.getvalue()) > 5 * 1024 * 1024:
-                    st.error("The image is larger than 5 MB.")
+                elif not image_uploads and not image_url.strip():
+                    st.error("Upload at least one property photo or provide a main image URL.")
+                elif any(len(upload.getvalue()) > 5 * 1024 * 1024 for upload in image_uploads):
+                    st.error("One or more images are larger than 5 MB. Reduce their size and try again.")
                 else:
-                    if image_upload:
-                        image_value = (
-                            f"data:{image_upload.type};base64,"
-                            + base64.b64encode(image_upload.getvalue()).decode("ascii")
-                        )
-                    else:
-                        image_value = image_url.strip()
+                    gallery_values = [
+                        f"data:{upload.type};base64," + base64.b64encode(upload.getvalue()).decode("ascii")
+                        for upload in image_uploads
+                    ]
+                    image_value = gallery_values[0] if gallery_values else image_url.strip()
+                    if not gallery_values and image_url.strip():
+                        gallery_values = [image_url.strip()]
                     insert_property({
                         "name": name.strip(), "location": location.strip(),
                         "price": float(price), "type": property_type,
                         "status": availability, "booking_status": "Available",
                         "bedrooms": int(bedrooms), "bathrooms": int(bathrooms),
                         "area": area.strip(), "image": image_value,
+                        "images": gallery_values,
                         "description": description.strip()
                     })
                     st.success(f"{name.strip()} has been added.")
@@ -1966,7 +2052,25 @@ elif st.session_state.page == "Admin":
 
         st.divider()
         st.markdown("### Manage existing properties")
-        for item in load_properties():
+        current_inventory = load_properties()
+        if current_inventory:
+            with st.expander("Remove the entire property inventory"):
+                st.warning(
+                    "This permanently deletes every property currently stored, including demo listings. "
+                    "This action cannot be undone."
+                )
+                confirm_all = st.checkbox(
+                    "I understand that all property listings will be permanently deleted.",
+                    key="confirm_delete_all_properties"
+                )
+                if st.button(
+                    "Delete all properties", key="delete_all_properties",
+                    type="secondary", disabled=not confirm_all
+                ):
+                    remove_all_properties()
+                    st.success("All property listings have been deleted.")
+                    st.rerun()
+        for item in current_inventory:
             with st.container(border=True):
                 row = st.columns([3, 1.2, 1.3])
                 with row[0]:
@@ -2001,8 +2105,8 @@ elif st.session_state.page == "Admin":
                         st.rerun()
 
         st.caption(
-            "Local prototype: sold and rented listings are removed permanently. "
-            "No transaction history or audit log is retained."
+            "Property deletion is permanent. The demo listings are seeded only once and will not return "
+            "after the inventory is cleared. No transaction history or audit log is retained."
         )
 
 
@@ -2249,6 +2353,15 @@ st.html(
         <p>
             © 2026 Zomar Homes & Property. All rights reserved.
         </p>
+
+        <div style="margin-top:18px; text-align:right;">
+            <a href="?zomar_page=Admin" target="_self"
+               style="display:inline-block; color:#D8A800; font-size:12px;
+                      text-decoration:none; border:1px solid #625321;
+                      border-radius:4px; padding:7px 12px;">
+                Admin Login
+            </a>
+        </div>
 
     </div>
     """
