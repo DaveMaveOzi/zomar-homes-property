@@ -209,6 +209,9 @@ if LOGO_PATH.exists():
     </div>
     """
 
+# Make the complete logo a home link on desktop and mobile.
+logo_html = f'<a class="zomar-logo-link" href="?zomar_page=Home" target="_self" aria-label="Zomar Homes & Property home">{logo_html}</a>'
+
 # =========================================================
 # 7. CUSTOM CSS
 # =========================================================
@@ -262,9 +265,18 @@ st.html(
        LOGO
     ====================================== */
 
+    .zomar-logo-link {{
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        text-decoration: none !important;
+        line-height: 0;
+    }}
+
     .logo-container {{
-        width: 190px;
-        height: 86px;
+        width: 380px;
+        height: 172px;
+        max-width: 100%;
         background: transparent;
         display: flex;
         align-items: center;
@@ -275,8 +287,9 @@ st.html(
     }}
 
     .logo-container img {{
-        width: 180px;
-        height: 82px;
+        width: 360px;
+        height: 164px;
+        max-width: 100%;
         object-fit: contain;
         object-position: left center;
         display: block;
@@ -779,14 +792,38 @@ st.html(
             padding: 0 !important;
         }}
 
+        /* Reverse the two header columns on mobile: controls on the left,
+           larger logo on the right. */
+        div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) {{
+            display: flex !important;
+            flex-direction: row-reverse !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 4px !important;
+            width: 100% !important;
+        }}
+
+        div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) > [data-testid="column"]:first-child {{
+            flex: 0 0 70% !important;
+            width: 70% !important;
+            min-width: 0 !important;
+        }}
+
+        div[data-testid="stHorizontalBlock"]:has(.st-key-mobile_header_controls) > [data-testid="column"]:last-child {{
+            flex: 0 0 30% !important;
+            width: 30% !important;
+            min-width: 0 !important;
+        }}
+
         .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] {{
             display: flex !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
-            justify-content: flex-end !important;
-            gap: 8px !important;
+            justify-content: flex-start !important;
+            gap: 7px !important;
             width: max-content !important;
-            margin-left: auto !important;
+            max-width: 100% !important;
+            margin-left: 0 !important;
         }}
 
         .st-key-mobile_header_controls [data-testid="column"] {{
@@ -828,14 +865,29 @@ st.html(
             font-size: 28px;
         }}
 
+        .zomar-logo-link {{
+            margin-left: auto;
+            max-width: 100%;
+        }}
+
         .logo-container {{
-            width: 172px;
-            height: 64px;
+            width: 344px;
+            height: 128px;
+            max-width: calc(100vw - 112px);
+            justify-content: flex-end;
+            margin-left: auto;
         }}
 
         .logo-container img {{
-            width: 165px;
-            height: 60px;
+            width: 330px;
+            height: 120px;
+            max-width: 100%;
+            object-position: right center;
+        }}
+
+        .zomar-menu-panel {{
+            left: 0;
+            right: auto;
         }}
 
         .st-key-mobile_header_controls {{
@@ -995,7 +1047,7 @@ def filtered_properties():
 
 # =========================================================
 # 9. WEBSITE HEADER
-# Logo on the left; mobile menu and theme toggle share one row.
+# Desktop: logo left. Mobile: controls left and logo right.
 # =========================================================
 
 header_left, header_right = st.columns(
