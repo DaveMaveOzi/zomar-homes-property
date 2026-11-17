@@ -814,21 +814,36 @@ st.html(
             min-width: 0 !important;
         }}
 
+        .st-key-mobile_header_controls {{
+            width: fit-content !important;
+            max-width: 100% !important;
+        }}
+
         .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] {{
             display: flex !important;
+            flex-direction: row !important;
             flex-wrap: nowrap !important;
             align-items: center !important;
             justify-content: flex-start !important;
-            gap: 4px !important;
-            width: fit-content !important;
-            max-width: 100% !important;
-            margin-left: 0 !important;
+            column-gap: 4px !important;
+            row-gap: 0 !important;
+            width: max-content !important;
+            max-width: max-content !important;
+            margin: 0 !important;
         }}
 
-        .st-key-mobile_header_controls [data-testid="column"] {{
-            flex: 0 0 auto !important;
-            width: auto !important;
-            min-width: 0 !important;
+        .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] > [data-testid="column"] {{
+            flex: 0 0 42px !important;
+            width: 42px !important;
+            max-width: 42px !important;
+            min-width: 42px !important;
+            padding: 0 !important;
+        }}
+
+        .st-key-mobile_header_controls [data-testid="stHorizontalBlock"] > [data-testid="column"] > div {{
+            width: 42px !important;
+            min-width: 42px !important;
+            max-width: 42px !important;
         }}
 
         .block-container {{
