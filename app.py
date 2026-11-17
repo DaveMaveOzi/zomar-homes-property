@@ -1066,7 +1066,7 @@ with header_right:
     with st.container(key="mobile_header_controls"):
         mobile_menu_col, mobile_theme_col = st.columns(
             [0.1, 0.1],
-            gap="none",
+            gap="small",
             vertical_alignment="center"
         )
 
